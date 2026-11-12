@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ドンジャラ（ブラウザ版・P2P対応）</title>
+<style>
+  :root{
+    --bg:#1b4332; --panel:#2d6a4f; --tile:#fffdf5; --tile-edge:#d4c9a8;
+    --accent:#ffd166; --danger:#ef476f; --text:#f1faee;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:radial-gradient(ellipse at center,var(--panel),var(--bg));
+    color:var(--text); min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding:10px; user-select:none;
+  }
+  h1{font-size:22px; letter-spacing:4px; margin:4px 0 2px; color:var(--accent); text-shadow:0 2px 4px rgba(0,0,0,.5);}
+  #sub{font-size:11px; opacity:.7; margin-bottom:6px;}
+  #board{width:100%; max-width:760px; position:relative;}
+  .player-zone{background:rgba(0,0,0,.25); border-radius:12px; padding:6px 8px; margin:6px 0;}
+  .player-zone.me{background:rgba(255,209,102,.12); border:1px solid var(--accent);}
+  .p-head{display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:4px; flex-wrap:wrap; min-height:20px;}
+  .p-name{font-weight:bold;}
+  .p-wins{font-size:11px; background:var(--accent); color:#333; border-radius:8px; padding:1px 8px;}
+  .turn-mark{color:var(--accent); font-weight:bold; animation:blink 1s infinite;}
+  @keyframes blink{50%{opacity:.2;}}
+  .tiles{display:flex; flex-wrap:wrap; gap:4px; min-height:52px; align-items:center;}
+  .tile{
+    width:46px; height:50px; background:var(--tile); border:1px solid var(--tile-edge); border-radius:7px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-size:24px; color:#333; box-shadow:0 2px 3px rgba(0,0,0,.4); flex-shrink:0;
+  }
+  .tile .lbl{font-size:8px; color:#777; line-height:1;}
+  .tile.joker{background:linear-gradient(135deg,#ffd166,#ef476f); color:#fff;}
+  .tile.joker .lbl{color:#fff;}
+  .me .tile{transition:transform .12s;}
+  .me .tile.can-discard{cursor:pointer;}
+  .me .tile.can-discard:hover{transform:translateY(-8px); box-shadow:0 6px 10px rgba(0,0,0,.5);}
+  .melds{display:flex; gap:8px; margin-top:4px;}
+  .meld{display:flex; gap:2px; background:rgba(255,255,255,.15); border-radius:6px; padding:2px;}
+  .meld .tile{width:30px; height:34px; font-size:16px;}
+  #river-zone{background:rgba(0,0,0,.35);}
+  #river{min-height:56px;}
+  .discard{width:46px; height:50px; background:var(--tile); border:1px solid var(--tile-edge); border-radius:7px;
+    display:flex; align-items:center; justify-content:center; font-size:24px; color:#333; position:relative; flex-shrink:0;}
+  .discard.last{outline:2px solid var(--danger); outline-offset:-2px;}
+  .dtag{position:absolute; top:-12px; left:0; font-size:8px; background:var(--danger); color:#fff; padding:0 4px; border-radius:4px; white-space:nowrap;}
+  #controls{display:flex; gap:10px; margin:8px 0; flex-wrap:wrap; justify-content:center; min-height:44px; align-items:center;}
+  button{
+    font-family:inherit; font-size:15px; font-weight:bold; padding:9px 26px; border:none; border-radius:24px;
+    background:var(--accent); color:#333; cursor:pointer; box-shadow:0 3px 6px rgba(0,0,0,.4);
+  }
+  button:disabled{opacity:.35; cursor:default;}
+  button.pon{background:var(--danger); color:#fff;}
+  button.pass{background:#457b9d; color:#fff;}
+  button.small{font-size:12px; padding:6px 14px;}
+  #log{
+    width:100%; max-width:760px; height:96px; overflow-y:auto; background:rgba(0,0,0,.4);
+    border-radius:10px; font-size:12px; padding:8px 12px; margin-top:4px; line-height:1.7;
+  }
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.8); display:none;
+    align-items:center; justify-content:center; z-index:20;
+  }
+  .overlay.show{display:flex;}
+  .ov-card{
+    background:var(--tile); color:#333; border-radius:16px; padding:28px 34px; text-align:center;
+    max-width:92vw; max-height:90vh; overflow-y:auto; box-shadow:0 10px 40px rgba(0,0,0,.7);
+  }
+  .ov-card h2{color:#b02a4c; font-size:24px; margin-bottom:10px;}
+  #ov-cards{font-size:30px; letter-spacing:2px; margin:12px 0;}
+  #ov-yaku{margin:8px 0;}
+  .yaku-line{font-size:14px; margin:2px 0;}
+  .yaku-line b{color:#b02a4c;}
+  .ov-note{font-size:13px; color:#666; margin-top:8px;}
+  .lobby-btns{display:flex; flex-direction:column; gap:12px; margin:18px 0; align-items:stretch;}
+  .lobby-btns button{font-size:17px; padding:14px 30px;}
+  #room-code{font-size:40px; letter-spacing:8px; color:#b02a4c; font-weight:bold; margin:8px 0;
+    background:#fff; border:3px dashed #b02a4c; border-radius:12px; padding:6px 18px; display:inline-block;}
+  .seat-list{margin:12px auto; text-align:left; font-size:14px; line-height:2; display:inline-block;}
+  input[type=text]{
+    font-family:inherit; font-size:16px; padding:8px 12px; border-radius:8px; border:2px solid #b02a4c; width:180px; text-align:center;
+  }
+  .err{color:#c1121f; font-size:13px; margin-top:8px; min-height:18px;}
+  #rule-btn-wrap{text-align:center; margin-top:2px;}
+  #rules{display:none; width:100%; max-width:760px; background:rgba(0,0,0,.4); border-radius:10px; padding:12px 16px; font-size:12px; line-height:1.9; margin-bottom:6px;}
+  #rules.show{display:block;}
+  .wallinfo{font-size:11px; opacity:.8; text-align:center; margin-bottom:2px;}
+  .hint{font-size:13px; color:var(--accent);}
+  .conn-badge{font-size:10px; border-radius:6px; padding:1px 6px; color:#fff;}
+  .conn-on{background:#2a9d8f;} .conn-cpu{background:#6c757d;}
+  .yaku-table{font-size:12px; margin-top:8px; border-collapse:collapse; text-align:left;}
+  .yaku-table td{padding:1px 10px; border-bottom:1px dotted #ccc;}
+</style>
+</head>
+<body>
+<h1>🀄 ドンジャラ 🀄</h1>
+<div id="sub">同じ牌3枚 × 3セットで「ドンジャラ！」─ 形によって役点がつくよ</div>
+<div id="rule-btn-wrap"><button class="small" id="rule-btn">ルール表示</button></div>
+<div id="rules">
+  <b>遊び方（4人対戦）</b><br>
+  ・全86枚（9種×9枚＋ワイルド「ドンジャラ」5枚）の山牌を使います。手札は基本8枚、自分の番に1枚ツモって9枚になります。<br>
+  ・<b>上がり形</b>：手牌＋副露全体で「同じ種類の牌3枚」のセット3つ（9枚） → <b>ドンジャラ成立！</b>ワイルド牌は何にでも代用できます。<br>
+  ・自分の番：山牌から自動でツモ → いらない牌をクリックして捨てます。<br>
+  ・<b>ポン</b>：他人の捨て牌を自分の手牌に2枚（ワイルド含む）持っていれば「ポン！」または「パス」を選べます（選ぶまで待ちます）。ポン1回ごとに得点が半減（最低200点）。<br>
+  ・山牌が尽きたら流局。<br>
+  <br><b>役一覧</b>
+  <table class="yaku-table">
+    <tr><td><b>基本ドンジャラ</b></td><td>通常の上がり</td><td>600点</td></tr>
+    <tr><td><b>トリプルJ</b></td><td>ワイルドを3枚以上使って上がり</td><td>+300点</td></tr>
+    <tr><td><b>連続ドンジャラ</b></td><td>3セットの種類が連続する3種（例：🐉🌙⭐）</td><td>+200点</td></tr>
+    <tr><td><b>ノーワイルド</b></td><td>ワイルドを1枚も使わずに上がり</td><td>総額×2</td></tr>
+    <tr><td><b>ナインブラザーズ</b></td><td>同じ種類9枚で上がり（他の役と代わり）</td><td>1800点</td></tr>
+  </table>
+  <br><b>通信プレイについて</b><br>
+  ・「部屋を作る」で4桁のコードを発行し、友だちに伝えます。友だちは「部屋に参加」からコードを入力。<br>
+  ・空席はCPUが自動で埋まります。対戦中に誰かが切断すると、その席はCPUに切り替わります。<br>
+  ・通信プレイ時のみインターネット接続が必要です（1人で遊ぶ場合はオフラインで動作します）。
+</div>
+<div class="wallinfo" id="wall-info"></div>
+<div id="board">
+  <div class="player-zone" id="zone-1"><div class="p-head" id="head-1"></div><div class="tiles" id="tiles-1"></div><div class="melds" id="melds-1"></div></div>
+  <div class="player-zone" id="zone-2"><div class="p-head" id="head-2"></div><div class="tiles" id="tiles-2"></div><div class="melds" id="melds-2"></div></div>
+  <div class="player-zone" id="zone-3"><div class="p-head" id="head-3"></div><div class="tiles" id="tiles-3"></div><div class="melds" id="melds-3"></div></div>
+  <div class="player-zone me" id="zone-0">
+    <div class="p-head" id="head-0"></div>
+    <div class="tiles" id="tiles-0"></div>
+    <div class="melds" id="melds-0"></div>
+  </div>
+  <div class="player-zone" id="river-zone">
+    <div class="p-head"><span class="p-name">🌊 捨て牌（川）</span></div>
+    <div class="tiles" id="river"></div>
+  </div>
+</div>
+<div id="controls"></div>
+<div id="log"></div>
+
+<!-- タイトル／ロビー -->
+<div class="overlay show" id="title-ov">
+  <div class="ov-card" id="title-card">
+    <h2>🀄 ドンジャラ</h2>
+    <div id="title-modes" class="lobby-btns">
+      <button id="btn-solo">🎲 ひとりで遊ぶ（CPU戦）</button>
+      <button id="btn-multi">🌐 みんなで遊ぶ（P2P）</button>
+    </div>
+    <div id="multi-modes" class="lobby-btns" style="display:none">
+      <button id="btn-host">部屋を作る（ホストになる）</button>
+      <button id="btn-join">部屋に参加</button>
+      <button class="small" id="btn-back1">← もどる</button>
+      <div class="err" id="p2p-err"></div>
+    </div>
+    <div id="host-lobby" style="display:none">
+      <div>部屋コードを友だちに伝えてね</div>
+      <div id="room-code">----−</div>
+      <div class="seat-list" id="host-seats"></div><br>
+      <button id="btn-start">ゲーム開始（空席はCPU）</button>
+      <div style="margin-top:8px"><button class="small" id="btn-back2">← もどる</button></div>
+      <div class="err" id="host-err"></div>
+    </div>
+    <div id="join-lobby" style="display:none">
+      <div style="margin-bottom:6px">部屋コード（4桁）</div>
+      <input type="text" id="join-code" maxlength="4" placeholder="例：A7K2" style="text-transform:uppercase">
+      <div style="margin:10px 0 6px">あなたの名前</div>
+      <input type="text" id="join-name" maxlength="8" placeholder="プレイヤー">
+      <div class="lobby-btns" style="margin-top:14px">
+        <button id="btn-join-go">参加する</button>
+        <button class="small" id="btn-back3">← もどる</button>
+      </div>
+      <div class="err" id="join-err"></div>
+    </div>
+    <div id="guest-wait" style="display:none">
+      <div>接続しました！</div>
+      <div class="seat-list" id="guest-seats"></div>
+      <div class="hint">ホストが開始するのを待っています…</div>
+    </div>
+    <div class="ov-note">※通信プレイはインターネット接続が必要です</div>
+  </div>
+</div>
+
+<!-- 結果 -->
+<div class="overlay" id="result-ov">
+  <div class="ov-card">
+    <h2 id="ov-title"></h2>
+    <div id="ov-cards"></div>
+    <div id="ov-yaku"></div>
+    <div id="ov-body"></div>
+    <div id="ov-next" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   純粋ロジック部（DOM非依存・Nodeテスト可能）
+   ============================================================ */
+const KINDS = [
+  {icon:'🐉', name:'ドラゴン'},
+  {icon:'🌙', name:'ムーン'},
+  {icon:'⭐', name:'スター'},
+  {icon:'🌸', name:'フラワー'},
+  {icon:'🔥', name:'ファイヤ'},
+  {icon:'🌊', name:'ウェーブ'},
+  {icon:'🍀', name:'クローバー'},
+  {icon:'⚡', name:'サンダー'},
+  {icon:'🍒', name:'チェリー'},
+];
+const NKINDS = KINDS.length; // 9
+const COPIES = 9;            // 各種類9枚
+const JOKERS = 5;            // ワイルド「ドンジャラ」牌
+const HAND = 8;              // 配牌枚数
+const WIN_TILES = 9;         // 上がりに必要な総枚数
+const BASE_PTS = 600;
+const MIN_PTS = 200;
+
+function tile(k, j){ return {k:k, j:!!j}; }
+function label(t){ return t.j ? 'ドンジャラ' : KINDS[t.k].name; }
+function icon(t){ return t.j ? '🀫' : KINDS[t.k].icon; }
+
+function makeWall(){
+  const w=[];
+  for(let k=0;k<NKINDS;k++) for(let c=0;c<COPIES;c++) w.push(tile(k));
+  for(let j=0;j<JOKERS;j++) w.push(tile(-1,true));
+  for(let i=w.length-1;i>0;i--){const r=Math.floor(Math.random()*(i+1));[w[i],w[r]]=[w[r],w[i]];}
+  return w;
+}
+function sortHand(h){ h.sort((a,b)=>(a.j-b.j)||(a.k-b.k)); }
+
+/* 上がり判定（バックトラッキング・非破壊） */
+function canWin(tiles){
+  const n=tiles.length;
+  if(n===0 || n%3!==0) return false;
+  const cnt=countTiles(tiles);
+  return splitRec(cnt, n/3);
+}
+function countTiles(tiles){
+  const cnt=new Array(NKINDS+1).fill(0);
+  tiles.forEach(t=>cnt[t.j?NKINDS:t.k]++);
+  return cnt;
+}
+function splitRec(c, need){
+  if(need===0) return c[NKINDS]===0 ? c.slice(0,NKINDS).every(v=>v===0) : c[NKINDS]%3===0;
+  if(c[NKINDS]>=3){
+    const nc=c.slice(); nc[NKINDS]-=3;
+    if(splitRec(nc,need-1)) return true;
+  }
+  for(let k=0;k<NKINDS;k++){
+    if(c[k]>0){
+      for(let s=0;s<=2;s++){
+        const j=2-s;
+        if(s<=c[k]-1 && j<=c[NKINDS]){
+          const nc=c.slice();
+          nc[k]-=1+s; nc[NKINDS]-=j;
+          if(splitRec(nc,need-1)) return true;
+        }
+      }
+      return false;
+    }
+  }
+  return c[NKINDS]===need*3;
+}
+
+/* ============================================================
+   形判定（役）
+   melds: セット配列の配列、hand: 手牌（上がり済みであること）
+   ============================================================ */
+function evaluateYaku(melds, hand){
+  const all=melds.flat().concat(hand);
+  const cnt=countTiles(all);
+  const jokers=cnt[NKINDS];
+  const yaku=[];
+  // ナインブラザーズ：同種9枚
+  if(cnt.slice(0,NKINDS).some(v=>v===9)){
+    yaku.push({name:'ナインブラザーズ', pts:1800, desc:'同じ種類9枚'});
+    return {yaku, total:1800};
+  }
+  yaku.push({name:'基本ドンジャラ', pts:BASE_PTS, desc:'通常の上がり'});
+  let total=BASE_PTS;
+  if(jokers>=3){
+    yaku.push({name:'トリプルJ', pts:300, desc:'ワイルド3枚以上使用'});
+    total+=300;
+  }
+  // 連続ドンジャラ：セットの種類が連続3種
+  const usedKinds=[];
+  for(let k=0;k<NKINDS;k++) if(cnt[k]>0) usedKinds.push(k);
+  if(usedKinds.length===3 && usedKinds[2]-usedKinds[0]===2){
+    yaku.push({name:'連続ドンジャラ', pts:200, desc:'セットが連続3種'});
+    total+=200;
+  }
+  if(jokers===0){
+    yaku.push({name:'ノーワイルド', pts:total, desc:'総額×2', x2:true});
+    total*=2;
+  }
+  return {yaku, total};
+}
+/* ポン回数を反映した最終得点 */
+function finalPts(yakuTotal, meldCount){
+  return Math.max(MIN_PTS, Math.floor(yakuTotal / Math.pow(2, meldCount)));
+}
+
+/* ============================================================
+   ホスト権威エンジン
+   opts: { sendTo(seat,msg), log(html), hostView(view), speed }
+   ============================================================ */
+function createEngine(opts){
+  const S = opts.speed || 1;
+  function delay(fn, ms){ setTimeout(fn, ms*S); }
+
+  let wall=[], river=[], players=[], turn=0, phase='lobby', dealNo=0, ponCtx=null;
+
+  function newPlayer(i){ return {i, name:'', hand:[], melds:[], wins:0, pts:0, cpu:true, connected:false}; }
+
+  const E = {};
+  E.addPlayer = function(name){
+    if(phase!=='lobby') return -1;
+    for(let i=0;i<4;i++){
+      if(!players[i]){ players[i]=newPlayer(i); players[i].name=name||'プレイヤー'; players[i].cpu=false; players[i].connected=true; return i; }
+    }
+    return -1;
+  };
+  E.initHost = function(hostName){
+    players=[newPlayer(0)]; players[0].name=hostName||'ホスト'; players[0].cpu=false; players[0].connected=true;
+    phase='lobby';
+  };
+  E.seatList = function(){
+    const list=[];
+    for(let i=0;i<4;i++){
+      if(players[i]) list.push({name:players[i].name, cpu:players[i].cpu, connected:players[i].connected});
+      else list.push({name:'', cpu:true, connected:false});
+    }
+    return list;
+  };
+  E.fillEmptyWithCpuAndStart = function(){
+    for(let i=0;i<4;i++){
+      if(!players[i]){ players[i]=newPlayer(i); players[i].name='CPU '+['ちい','なお','はる'][(i-1+3)%3]; players[i].cpu=true; }
+    }
+    startDeal();
+  };
+  E.seatLeft = function(seat){
+    const p=players[seat];
+    if(!p) return;
+    p.connected=false;
+    if(phase==='lobby'){ players[seat]=null; return; }
+    if(p.cpu) return;
+    p.cpu=true; p.name=p.name+'（CPU）';
+    opts.log(`⚠ ${p.name} の接続が切れたためCPUに切替しました`);
+    if(phase==='discard' && turn===seat){ delay(()=>cpuDiscard(seat),400); }
+    else if(phase==='pon-wait' && ponCtx && ponCtx.waiting.has(seat)){
+      ponCtx.waiting.delete(seat);
+      if(ponCtx.waiting.size===0) resolvePon();
+    }
+    sendViews();
+  };
+  E.nextDeal = function(){ if(phase==='over') startDeal(); };
+
+  function startDeal(){
+    wall=makeWall(); river=[]; ponCtx=null;
+    players.forEach(p=>{p.hand=[]; p.melds=[];});
+    for(let n=0;n<4;n++) for(let k=0;k<HAND;k++) players[n].hand.push(wall.pop());
+    players.forEach(p=>sortHand(p.hand));
+    dealNo++; turn=0; phase='draw';
+    opts.log(`── 第${dealNo}局 開始 ──`);
+    sendViews();
+    delay(beginTurn, 900);
+  }
+
+  function beginTurn(){
+    if(phase==='over'||phase==='lobby') return;
+    const p=players[turn];
+    sendViews();
+    delay(()=>{
+      if(phase!=='draw') return;
+      if(wall.length===0){ endDeal(); return; }
+      const t=wall.pop();
+      p.hand.push(t);
+      opts.log(`${p.name}がツモ：${icon(t)} ${label(t)}`);
+      if(checkWin(turn,'ツモドンジャラ！',true)) return;
+      if(p.cpu){ delay(()=>cpuDiscard(turn), 750); }
+      else { phase='discard'; sendViews(); }
+    }, 600);
+  }
+
+  function cpuDiscard(i){
+    const p=players[i];
+    const t=worstTile(p);
+    p.hand.splice(p.hand.indexOf(t),1);
+    river.push({tile:t, from:p.name});
+    opts.log(`${p.name}が捨てた：${icon(t)} ${label(t)}`);
+    phase='pon-check';
+    sendViews();
+    delay(()=>ponCheck(i), 300);
+  }
+
+  E.onMessage = function(seat, msg){
+    if(phase==='discard' && msg.t==='discard' && turn===seat){
+      const p=players[seat];
+      const idx=msg.idx|0;
+      if(idx<0 || idx>=p.hand.length) return;
+      const t=p.hand.splice(idx,1)[0];
+      river.push({tile:t, from:p.name});
+      opts.log(`${p.name}が捨てた：${icon(t)} ${label(t)}`);
+      phase='pon-check';
+      sendViews();
+      delay(()=>ponCheck(seat), 300);
+    }
+    else if(phase==='pon-wait' && (msg.t==='pon'||msg.t==='pass') && ponCtx && ponCtx.waiting.has(seat)){
+      ponCtx.responses.set(seat, msg.t);
+      ponCtx.waiting.delete(seat);
+      if(ponCtx.waiting.size===0) resolvePon();
+      else sendViews();
+    }
+  };
+
+  function ponCheck(fromIdx){
+    if(phase!=='pon-check') return;
+    const last=river[river.length-1];
+    const eligible=[];
+    for(let d=1;d<=3;d++){
+      const i=(fromIdx+d)%4;
+      const p=players[i];
+      if(p.hand.filter(t=>t.j||t.k===last.tile.k).length>=2) eligible.push(i);
+    }
+    if(!eligible.length){ nextTurn(fromIdx); return; }
+    const humans=eligible.filter(i=>!players[i].cpu);
+    const cpus=eligible.filter(i=>players[i].cpu);
+    if(humans.length){
+      phase='pon-wait'; // 人間の回答を無制限に待つ
+      ponCtx={waiting:new Set(humans), responses:new Map(), eligible, cpus, fromIdx};
+      sendViews();
+    } else {
+      if(cpus.length && Math.random()<0.6){ delay(()=>doPon(cpus[0]), 700); }
+      else nextTurn(fromIdx);
+    }
+  }
+
+  function resolvePon(){
+    if(phase!=='pon-wait'||!ponCtx) return;
+    const ponSeat = ponCtx.eligible.find(i=>ponCtx.responses.get(i)==='pon');
+    if(ponSeat!==undefined){ doPon(ponSeat); return; }
+    if(ponCtx.cpus.length && Math.random()<0.6){ doPon(ponCtx.cpus[0]); return; }
+    const from=ponCtx.fromIdx;
+    ponCtx=null; nextTurn(from);
+  }
+
+  function doPon(i){
+    const last=river.pop();
+    const p=players[i];
+    const used=[];
+    for(let n=0;n<2;n++){
+      let idx=p.hand.findIndex(t=>!t.j&&t.k===last.tile.k);
+      if(idx<0) idx=p.hand.findIndex(t=>t.j);
+      used.push(p.hand.splice(idx,1)[0]);
+    }
+    p.melds.push([last.tile, ...used]);
+    ponCtx=null;
+    turn=i; // ポンした人の捨て番へ
+    opts.log(`🔔 <b>${p.name}がポン！</b>［${icon(last.tile)} ${label(last.tile)}］`);
+    if(checkWin(i,'ポンでドンジャラ！',false)) return;
+    if(p.cpu){ delay(()=>cpuDiscard(i), 800); }
+    else { phase='discard'; sendViews(); }
+  }
+
+  function checkWin(i, title, tsumo){
+    const p=players[i];
+    if(p.hand.length+3*p.melds.length!==WIN_TILES) return false;
+    if(p.hand.length===0 || p.hand.length%3!==0 || !canWin(p.hand)) return false;
+    phase='over';
+    p.wins++;
+    const ev=evaluateYaku(p.melds, p.hand);
+    const pts=finalPts(ev.total, p.melds.length);
+    const each=Math.floor(pts/3);
+    players.forEach(q=>{ if(q!==p) q.pts-=each; });
+    p.pts += pts - each*2;
+    const yakuHtml=ev.yaku.map(y=>`<div class="yaku-line"><b>${y.name}</b>${y.x2?'（総額×2）':' ＋'+y.pts+'点'} <span style="font-size:11px;color:#888">${y.desc}</span></div>`).join('');
+    opts.log(`<b style="color:#ffd166">🏆 ${p.name} ドンジャラ！ ${pts}点［${ev.yaku.map(y=>y.name).join('・')}］</b>`);
+    sendViews({result:{draw:false, winner:i, name:p.name, title, pts, tsumo,
+      melds:p.melds, hand:p.hand, yaku:ev.yaku, yakuHtml}});
+    return true;
+  }
+
+  function endDeal(){
+    phase='over';
+    opts.log('〜 流局：山牌が尽きました 〜');
+    sendViews({result:{draw:true}});
+  }
+
+  function nextTurn(fromIdx){
+    if(phase==='over') return;
+    turn=(fromIdx+1)%4;
+    phase='draw';
+    sendViews();
+    delay(beginTurn, 600);
+  }
+
+  function worstTile(p){
+    const cnt={};
+    p.hand.forEach(t=>{const k=t.j?'J':t.k; cnt[k]=(cnt[k]||0)+1;});
+    let best=null, bestScore=1e9;
+    p.hand.forEach((t,i)=>{
+      const k=t.j?'J':t.k;
+      let score = cnt[k]>=3 ? 0 : cnt[k]===2 ? 50 : 100;
+      if(t.j) score=0;
+      score+=i*0.01;
+      if(score<bestScore){bestScore=score;best=t;}
+    });
+    return best;
+  }
+
+  function viewFor(seat, extra){
+    const v={
+      you:seat, dealNo, wall:wall.length, phase, turn,
+      players:players.map((p,i)=>({
+        name:p.name, cpu:p.cpu, connected:p.connected,
+        handCount:p.hand.length, melds:p.melds,
+        wins:p.wins, pts:p.pts,
+        isTurn:i===turn && phase!=='over' && phase!=='lobby'
+      })),
+      yourHand: players[seat] ? players[seat].hand : [],
+      river: river,
+      prompt:
+        (phase==='discard' && turn===seat) ? {type:'discard'} :
+        (phase==='pon-wait' && ponCtx && ponCtx.waiting.has(seat)) ? {type:'pon', tile:river[river.length-1].tile} :
+        null
+    };
+    if(extra) Object.assign(v, extra);
+    return v;
+  }
+  function sendViews(extra){
+    players.forEach((p,i)=>{
+      if(!p) return;
+      const v=viewFor(i, extra);
+      if(i===0) opts.hostView(v);
+      else opts.sendTo(i, {t:'view', v:v});
+    });
+  }
+  return E;
+}
+/*__PURE_ENGINE_END__ — これより下はDOM/通信（Nodeテスト対象外）*/
+
+/* ============================================================
+   P2P：PeerJS の遅延読み込み（対人戦を選んだときだけ読み込む）
+   ============================================================ */
+const PEER_PREFIX='djr2-v1-';
+const PEER_URL='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+let peer=null, hostConns={}, mySeat=-1, isHost=false, gameConn=null, engine=null;
+
+function myName(){ const el=document.getElementById('join-name'); return el&&el.value.trim() ? el.value.trim() : 'プレイヤー'; }
+
+function loadPeerJS(timeoutMs){
+  return new Promise((res, rej)=>{
+    if(window.Peer) return res();
+    const s=document.createElement('script');
+    s.src=PEER_URL;
+    const timer=setTimeout(()=>{
+      s.remove();
+      rej(new Error('ライブラリの読み込みがタイムアウトしました（ネットワークを確認してね）'));
+    }, timeoutMs||10000);
+    s.onload=()=>{ clearTimeout(timer); window.Peer ? res() : rej(new Error('ライブラリを読み込めませんでした')); };
+    s.onerror=()=>{ clearTimeout(timer); s.remove(); rej(new Error('ライブラリの取得に失敗しました（ネットワークを確認してね）')); };
+    document.head.appendChild(s);
+  });
+}
+function p2pFail(msg){
+  document.getElementById('p2p-err').textContent='⚠ '+msg;
+  showPanel('multi-modes');
+  if(peer){ try{peer.destroy();}catch(e){} peer=null; }
+}
+
+function genCode(){
+  const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s=''; for(let i=0;i<4;i++) s+=A[Math.floor(Math.random()*A.length)];
+  return s;
+}
+
+function hostRoom(){
+  const code=genCode();
+  document.getElementById('room-code').textContent=code;
+  try{
+    peer=new Peer(PEER_PREFIX+code);
+  }catch(e){ p2pFail('接続の初期化に失敗: '+e.message); return; }
+  const guard=setTimeout(()=>{ if(!engine) p2pFail('シグナリングサーバに接続できません（10秒タイムアウト）'); }, 10000);
+  peer.on('open',()=>{
+    clearTimeout(guard);
+    engine=createEngine({
+      speed:1,
+      sendTo:(seat,msg)=>{ const c=hostConns[seat]; if(c&&c.open) c.send(msg); },
+      log:(m)=>{ appendLog(m); for(let i=1;i<4;i++){ const c=hostConns[i]; if(c&&c.open) c.send({t:'log', m}); } },
+      hostView:renderView
+    });
+    engine.initHost(myName());
+    showPanel('host-lobby');
+    updateHostSeats();
+  });
+  peer.on('connection', conn=>{
+    conn.on('data', data=>{
+      if(data.t==='join'){
+        if(!engine){ conn.send({t:'err', m:'ホスト準備中です'}); return; }
+        const actualSeat=engine.addPlayer(data.name||'プレイヤー');
+        if(actualSeat<0){ conn.send({t:'full'}); conn.close(); return; }
+        hostConns[actualSeat]=conn;
+        conn.send({t:'welcome', seat:actualSeat});
+        broadcastLobby();
+      } else if(engine){
+        const seat=Object.keys(hostConns).find(k=>hostConns[k]===conn);
+        if(seat!==undefined) engine.onMessage(+seat, data);
+      }
+    });
+    conn.on('close', ()=>{
+      const seat=Object.keys(hostConns).find(k=>hostConns[k]===conn);
+      if(seat!==undefined){ delete hostConns[seat]; engine.seatLeft(+seat); broadcastLobby(); }
+    });
+  });
+  peer.on('error', e=>{
+    clearTimeout(guard);
+    if(!engine) p2pFail('接続エラー: '+e.type);
+    else document.getElementById('host-err').textContent='⚠ 接続エラー: '+e.type;
+  });
+}
+function broadcastLobby(){
+  if(!engine) return;
+  const seats=engine.seatList();
+  document.getElementById('host-seats').innerHTML=seatsHTML(seats,0);
+  for(let i=1;i<4;i++){
+    const c=hostConns[i];
+    if(c&&c.open) c.send({t:'lobby', seats});
+  }
+}
+function seatsHTML(seats, youSeat){
+  return seats.map((s,i)=>{
+    const empty=!s.connected && !s.cpu;
+    const name = empty ? '空席（CPUが入ります）' : s.name + (i===youSeat ? '（あなた）' : '');
+    let badge='';
+    if(!empty) badge = s.cpu ? '<span class="conn-badge conn-cpu">CPU</span>' : '<span class="conn-badge conn-on">接続中</span>';
+    return `<div>${['🅰','🅱','🅲','🅳'][i]} ${name} ${badge}</div>`;
+  }).join('');
+}
+
+function joinRoom(code){
+  loadPeerJS(10000).then(()=>{
+    peer=new Peer();
+    document.getElementById('join-err').textContent='接続中…';
+    const guard=setTimeout(()=>{ document.getElementById('join-err').textContent='⚠ 接続がタイムアウトしました'; }, 10000);
+    peer.on('open',()=>{
+      const conn=peer.connect(PEER_PREFIX+code, {reliable:true});
+      gameConn=conn;
+      conn.on('open',()=>{ clearTimeout(guard); conn.send({t:'join', name:myName()}); });
+      conn.on('data', data=>{
+        if(data.t==='welcome'){ mySeat=data.seat; isHost=false; showPanel('guest-wait'); }
+        else if(data.t==='full'){ document.getElementById('join-err').textContent='部屋が満席です'; }
+        else if(data.t==='lobby'){ document.getElementById('guest-seats').innerHTML=seatsHTML(data.seats, mySeat); }
+        else if(data.t==='started'){ document.getElementById('title-ov').classList.remove('show'); }
+        else if(data.t==='view'){ renderView(data.v); }
+        else if(data.t==='log'){ appendLog(data.m); }
+        else if(data.t==='err'){ document.getElementById('join-err').textContent=data.m; }
+      });
+      conn.on('close', ()=>{ alert('ホストとの接続が切れました'); location.reload(); });
+    });
+    peer.on('error', e=>{
+      clearTimeout(guard);
+      document.getElementById('join-err').textContent =
+        e.type==='peer-unavailable' ? '部屋が見つかりません（コード確認）' : '接続エラー: '+e.type;
+    });
+  }).catch(err=>{
+    document.getElementById('join-err').textContent='⚠ '+err.message;
+  });
+}
+
+/* ============================================================
+   UI描画
+   ============================================================ */
+let currentView=null;
+function renderView(v){
+  currentView=v;
+  window.currentViewRef=v; // E2Eテスト用
+  // 結果オーバーレイの制御
+  if(v.result){ showResult(v.result); }
+  else { document.getElementById('result-ov').classList.remove('show'); }
+  document.getElementById('wall-info').textContent=`🀫 山牌 残り ${v.wall} 枚 ／ 第${v.dealNo}局`;
+  for(let i=0;i<4;i++){
+    const p=v.players[i];
+    const head=document.getElementById('head-'+i);
+    head.innerHTML=`<span class="p-name">${p.name}</span>
+      ${p.isTurn?'<span class="turn-mark">◀ 順番</span>':''}
+      ${p.cpu?'<span class="conn-badge conn-cpu">CPU</span>':(p.connected?'<span class="conn-badge conn-on">接続中</span>':'')}
+      <span class="p-wins">🏆 ${p.wins}</span><span style="font-size:11px;opacity:.8">${p.pts}点</span>`;
+    const tilesDiv=document.getElementById('tiles-'+i);
+    if(i===v.you){
+      const canD = v.prompt && v.prompt.type==='discard';
+      tilesDiv.innerHTML=v.yourHand.map(t=>{
+        const cls = canD?'can-discard':'';
+        return t.j
+          ? `<div class="tile joker ${cls}">🀫<span class="lbl">ドンジャラ</span></div>`
+          : `<div class="tile ${cls}">${KINDS[t.k].icon}<span class="lbl">${KINDS[t.k].name}</span></div>`;
+      }).join('');
+    } else {
+      tilesDiv.innerHTML=Array(p.handCount).fill(`<div class="tile" style="background:#9db4a0;border-color:#7c9480;color:#9db4a0">❓</div>`).join('');
+    }
+    document.getElementById('melds-'+i).innerHTML=p.melds.map(m=>`<div class="meld">${m.map(tileHTML).join('')}</div>`).join('');
+  }
+  document.getElementById('river').innerHTML=v.river.map((d,i)=>{
+    const last=i===v.river.length-1;
+    return `<div class="discard ${last?'last':''}">${icon(d.tile)}${last?`<span class="dtag">${d.from}</span>`:''}</div>`;
+  }).join('');
+  renderControls(v);
+}
+function tileHTML(t){
+  return t.j
+    ? `<div class="tile joker">🀫<span class="lbl">ドンジャラ</span></div>`
+    : `<div class="tile">${KINDS[t.k].icon}<span class="lbl">${KINDS[t.k].name}</span></div>`;
+}
+function renderControls(v){
+  const c=document.getElementById('controls');
+  let html='';
+  if(v.prompt && v.prompt.type==='discard'){
+    html=`<span class="hint">⬅ いらない牌をクリックして捨ててね</span>`;
+  } else if(v.prompt && v.prompt.type==='pon'){
+    const t=v.prompt.tile;
+    html=`<button class="pon" id="btn-pon">🔔 ポン！［${icon(t)} ${label(t)}］</button>
+          <button class="pass" id="btn-pass">パス</button>`;
+  } else if(v.phase!=='over'){
+    html=`<span class="hint">…</span>`;
+  }
+  c.innerHTML=html;
+  const bp=document.getElementById('btn-pon');
+  if(bp) bp.onclick=()=>sendAction({t:'pon'});
+  const ps=document.getElementById('btn-pass');
+  if(ps) ps.onclick=()=>sendAction({t:'pass'});
+}
+function sendAction(a){
+  if(isHost){ if(engine) engine.onMessage(0, a); }
+  else if(gameConn && gameConn.open) gameConn.send(a);
+}
+function appendLog(m){
+  const el=document.getElementById('log');
+  el.innerHTML=`<div>${m}</div>`+el.innerHTML;
+}
+function showResult(r){
+  document.getElementById('ov-title').textContent = r.draw ? '〜 流局 〜' : `🏆 ${r.name} の ${r.title}`;
+  document.getElementById('ov-title').style.color = r.draw ? '#555' : '#b02a4c';
+  document.getElementById('ov-cards').innerHTML = r.draw ? '' :
+    r.melds.map(m=>`<span>${m.map(icon).join('')}</span>`).join(' ＋ ')
+    + (r.melds.length?' ＋ ':'') + r.hand.map(icon).join('');
+  document.getElementById('ov-yaku').innerHTML = (r.draw||!r.yaku) ? '' :
+    `<div style="font-size:13px;color:#555;margin-top:6px">－ 成立役 －</div>` + r.yakuHtml;
+  document.getElementById('ov-body').innerHTML = r.draw ? '山牌が尽きました。' :
+    `<b style="font-size:18px">${r.pts}点ゲット！</b><br><span style="font-size:12px">${r.tsumo?'ツモ上がり':`ポン${r.melds.length}回につき点数半減`}</span>`;
+  document.getElementById('ov-next').innerHTML = isHost
+    ? `<button id="btn-next-deal">次の局へ</button>`
+    : `<span class="hint">ホストの操作で次の局が始まります…</span>`;
+  const b=document.getElementById('btn-next-deal');
+  if(b) b.onclick=()=>{ engine.nextDeal(); };
+  document.getElementById('result-ov').classList.add('show');
+}
+
+/* ============================================================
+   画面遷移・イベント
+   ============================================================ */
+function showPanel(id){
+  ['title-modes','multi-modes','host-lobby','join-lobby','guest-wait'].forEach(p=>{
+    document.getElementById(p).style.display = p===id ? '' : 'none';
+  });
+  document.getElementById('p2p-err').textContent='';
+  document.getElementById('join-err').textContent='';
+}
+document.getElementById('btn-solo').onclick=()=>{
+  document.getElementById('title-ov').classList.remove('show');
+  isHost=true; // CPU戦は完全ローカル（通信ライブラリ・ネットワーク不要）
+  engine=createEngine({speed:fastMode()?0.08:1, sendTo:()=>{}, log:appendLog, hostView:renderView});
+  engine.initHost(myName());
+  engine.fillEmptyWithCpuAndStart();
+};
+document.getElementById('btn-multi').onclick=()=>showPanel('multi-modes');
+document.getElementById('btn-back1').onclick=()=>showPanel('title-modes');
+document.getElementById('btn-back3').onclick=()=>showPanel('multi-modes');
+document.getElementById('btn-host').onclick=()=>{
+  showPanel('host-lobby');
+  document.getElementById('room-code').textContent='読込中…';
+  loadPeerJS(10000).then(()=>hostRoom()).catch(err=>p2pFail(err.message));
+};
+document.getElementById('btn-back2').onclick=()=>{ if(peer){try{peer.destroy();}catch(e){}} peer=null; engine=null; showPanel('multi-modes'); };
+document.getElementById('btn-join').onclick=()=>{ showPanel('join-lobby'); const el=document.getElementById('join-code'); el.value=el.value.toUpperCase(); };
+document.getElementById('btn-join-go').onclick=()=>{
+  const code=document.getElementById('join-code').value.trim().toUpperCase();
+  if(code.length!==4){ document.getElementById('join-err').textContent='4桁のコードを入力してね'; return; }
+  joinRoom(code);
+};
+document.getElementById('btn-start').onclick=()=>{
+  document.getElementById('title-ov').classList.remove('show');
+  for(let i=1;i<4;i++){ const c=hostConns[i]; if(c&&c.open) c.send({t:'started'}); }
+  engine.fillEmptyWithCpuAndStart();
+};
+document.getElementById('rule-btn').onclick=()=>document.getElementById('rules').classList.toggle('show');
+document.getElementById('tiles-0').addEventListener('click',e=>{
+  if(!currentView || !currentView.prompt || currentView.prompt.type!=='discard') return;
+  const tilesEl=[...e.currentTarget.children];
+  const idx=tilesEl.indexOf(e.target.closest('.tile'));
+  if(idx>=0) sendAction({t:'discard', idx});
+});
+function fastMode(){
+  try{ return new URLSearchParams(location.search).get('fast')==='1'; }catch(e){ return false; }
+}
+if(location.hash==='#join') showPanel('join-lobby');
+</script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","spa":2}' crossorigin="anonymous"></script>
+</body>
+</html>
